@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Main script to test the File Intake Handler with sample documents.
+Main script to test the Entry Queue Manager with sample documents.
 
-This script demonstrates how to use the File Intake Handler to process
+This script demonstrates how to use the Entry Queue Manager to process
 invoice and receipt documents using PyMongo.
 """
 
@@ -11,12 +11,12 @@ import sys
 from datetime import datetime
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
+from dotenv import load_dotenv
 
-# Add the file_intake directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), "file_intake"))
+load_dotenv()
 
-from file_intake.file_intake_handler import (
-    FileIntakeManager,
+from entry_queue.entry_queue_manager import (
+    EntryQueueManager,
     FileInfo,
     ProcessingStatus,
 )
@@ -27,7 +27,8 @@ def setup_mongodb():
     try:
         # Connect to MongoDB (default localhost:27017)
         client = MongoClient(
-            "mongodb://localhost:27017/", serverSelectionTimeoutMS=5000
+            os.getenv("MONGODB_URL", "mongodb://localhost:27017/"),
+            serverSelectionTimeoutMS=5000,
         )
 
         # Test the connection
@@ -47,15 +48,15 @@ def setup_mongodb():
 
 
 def main():
-    """Main function to test file intake handler."""
+    """Main function to test entry queue manager."""
 
-    print("=== File Intake Handler Test ===\n")
+    print("=== Entry Queue Manager Test ===\n")
 
     # Setup MongoDB collection
     db, collection = setup_mongodb()
 
-    # Initialize File Intake Manager (no queue manager needed)
-    intake_manager = FileIntakeManager(collection)
+    # Initialize Entry Queue Manager
+    entry_queue_manager = EntryQueueManager(collection)
 
     # Test files to process
     test_files = [
@@ -94,7 +95,7 @@ def main():
         )
 
         # Process the file
-        result = intake_manager.process_file_request(file_info)
+        result = entry_queue_manager.process_file_request(file_info)
 
         if result["status"] == "success":
             print(f"   ✓ Success: {result['intake_id']}")
@@ -117,7 +118,7 @@ def main():
         date=datetime(2025, 1, 1),
     )
 
-    result = intake_manager.process_file_request(duplicate_file_info)
+    result = entry_queue_manager.process_file_request(duplicate_file_info)
     if result["status"] == "duplicate":
         print(f"   ✓ Duplicate correctly detected: {result['message']}")
     else:
@@ -129,7 +130,7 @@ def main():
         print("4. Testing status updates:")
         for intake_id in processed_intake_ids:
             # Update status to processing
-            success = intake_manager.update_intake_status(
+            success = entry_queue_manager.update_intake_status(
                 intake_id,
                 ProcessingStatus.PROCESSING.value,
                 {"extractor_started_at": datetime.now().isoformat()},
@@ -139,7 +140,7 @@ def main():
                 print(f"   ✓ Updated {intake_id} to PROCESSING")
 
                 # Retrieve and display updated record
-                record = intake_manager.get_intake_record(intake_id)
+                record = entry_queue_manager.get_intake_record(intake_id)
                 if record:
                     print(f"   Status: {record.processing_status}")
                     print(f"   Details: {record.status_details}")
@@ -149,7 +150,7 @@ def main():
 
     # Display queue status
     print("5. Queue Status:")
-    extraction_queue = intake_manager.get_extraction_queue()
+    extraction_queue = entry_queue_manager.get_extraction_queue()
     print(f"   Items in queue: {len(extraction_queue)}")
     for item in extraction_queue:
         print(f"   - {item['intake_id']}: {os.path.basename(item['file_location'])}")

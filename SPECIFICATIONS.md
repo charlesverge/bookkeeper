@@ -77,14 +77,13 @@ The Bookkeeper Agent is an intelligent financial management system that automate
 - `get_messages(labels: [str] | None)`: Retrieve emails with specific labels
 - `download_attachments()`: Extract and save attachments
 
-#### File Intake Handler (`file_intake/`)
+#### Entry Queue Manager (`entry_queue/`)
 
 **Purpose**: Handle manual file uploads and document intake
 
 **Key Classes**:
 
-- `FileIntakeManager`: Main intake orchestrator
-- `FileValidator`: Validate incoming files and metadata
+- `EntryQueueManager`: Main intake orchestrator
 - `DocumentClassifier`: Classify documents as receipt, invoice, or other
 - `IntakeRecord`: Data structure for intake tracking
 - `SourceTracker`: Track document sources and origins
@@ -204,7 +203,7 @@ The Bookkeeper Agent is an intelligent financial management system that automate
 
 - `BookkeeperWorkflow`: Main LangGraph workflow definition
 - `EmailProcessorNode`: Email processing node
-- `FileIntakeNode`: File intake processing node
+- `EntryQueueNode`: Entry queue processing node
 - `ClassificationNode`: Expense classification node
 - `ValidationNode`: Data validation node
 - `StorageNode`: Data storage node
@@ -213,7 +212,7 @@ The Bookkeeper Agent is an intelligent financial management system that automate
 **Key Methods**:
 
 - `process_emails()`: Main workflow entry point for email processing
-- `process_intake_files()`: Main workflow entry point for file intake
+- `process_entry_queue()`: Main workflow entry point for entry queue processing
 - `validate_and_store()`: Validation and storage pipeline
 - `generate_reports()`: Reporting workflow
 - `handle_errors()`: Error handling and recovery

@@ -3,3 +3,6 @@ lib
 bin
 pyvenv.cfg
 bookkeeper.egg-info/
+__pycache__/
+*.pyc
+.env

@@ -1,5 +1,5 @@
 """
-File Intake Handler - Central coordination point for document intake operations.
+Entry Queue Manager - Central coordination point for document intake operations.
 
 This module handles duplicate detection, queue management, and status tracking
 for documents received from file and email handlers.
@@ -123,7 +123,7 @@ class DuplicateChecker:
             raise DatabaseError(f"Failed to check duplicates: {str(e)}")
 
 
-class FileIntakeManager:
+class EntryQueueManager:
     """Central orchestrator for all intake operations."""
 
     def __init__(self, mongodb_collection: Collection):
@@ -320,17 +320,27 @@ class FileIntakeManager:
             queued_records = self.collection.find(
                 {"processing_status": ProcessingStatus.QUEUED_FOR_EXTRACTION.value}
             ).sort("created_at", 1)
-            
+
             queue_items = []
             for record in queued_records:
-                queue_items.append({
-                    "intake_id": record["intake_id"],
-                    "file_location": record["file_location"],
-                    "file_id": record["file_id"],
-                    "source": record["source"],
-                    "date": record["date"].isoformat() if hasattr(record["date"], 'isoformat') else str(record["date"]),
-                    "queued_at": record["created_at"].isoformat() if hasattr(record["created_at"], 'isoformat') else str(record["created_at"]),
-                })
+                queue_items.append(
+                    {
+                        "intake_id": record["intake_id"],
+                        "file_location": record["file_location"],
+                        "file_id": record["file_id"],
+                        "source": record["source"],
+                        "date": (
+                            record["date"].isoformat()
+                            if hasattr(record["date"], "isoformat")
+                            else str(record["date"])
+                        ),
+                        "queued_at": (
+                            record["created_at"].isoformat()
+                            if hasattr(record["created_at"], "isoformat")
+                            else str(record["created_at"])
+                        ),
+                    }
+                )
             return queue_items
         except Exception as e:
             logger.error(f"Failed to get extraction queue: {e}")
@@ -341,13 +351,17 @@ class FileIntakeManager:
         try:
             result = self.collection.update_many(
                 {"processing_status": ProcessingStatus.QUEUED_FOR_EXTRACTION.value},
-                {"$set": {
-                    "processing_status": ProcessingStatus.FAILED.value,
-                    "updated_at": datetime.utcnow(),
-                    "status_details": {"reason": "Queue cleared"}
-                }}
+                {
+                    "$set": {
+                        "processing_status": ProcessingStatus.FAILED.value,
+                        "updated_at": datetime.utcnow(),
+                        "status_details": {"reason": "Queue cleared"},
+                    }
+                },
             )
-            logger.info(f"Cleared extraction queue - updated {result.modified_count} records")
+            logger.info(
+                f"Cleared extraction queue - updated {result.modified_count} records"
+            )
         except Exception as e:
             logger.error(f"Failed to clear extraction queue: {e}")
 
@@ -357,27 +371,37 @@ class FileIntakeManager:
             # Find the oldest queued record
             queued_record = self.collection.find_one(
                 {"processing_status": ProcessingStatus.QUEUED_FOR_EXTRACTION.value},
-                sort=[("created_at", 1)]
+                sort=[("created_at", 1)],
             )
-            
+
             if queued_record:
                 # Update its status to processing
                 self.collection.update_one(
                     {"intake_id": queued_record["intake_id"]},
-                    {"$set": {
-                        "processing_status": ProcessingStatus.PROCESSING.value,
-                        "updated_at": datetime.utcnow()
-                    }}
+                    {
+                        "$set": {
+                            "processing_status": ProcessingStatus.PROCESSING.value,
+                            "updated_at": datetime.utcnow(),
+                        }
+                    },
                 )
-                
+
                 # Return the queue item format
                 item = {
                     "intake_id": queued_record["intake_id"],
                     "file_location": queued_record["file_location"],
                     "file_id": queued_record["file_id"],
                     "source": queued_record["source"],
-                    "date": queued_record["date"].isoformat() if hasattr(queued_record["date"], 'isoformat') else str(queued_record["date"]),
-                    "queued_at": queued_record["created_at"].isoformat() if hasattr(queued_record["created_at"], 'isoformat') else str(queued_record["created_at"]),
+                    "date": (
+                        queued_record["date"].isoformat()
+                        if hasattr(queued_record["date"], "isoformat")
+                        else str(queued_record["date"])
+                    ),
+                    "queued_at": (
+                        queued_record["created_at"].isoformat()
+                        if hasattr(queued_record["created_at"], "isoformat")
+                        else str(queued_record["created_at"])
+                    ),
                 }
                 logger.info(f"Popped {item['intake_id']} from extraction queue")
                 return item
