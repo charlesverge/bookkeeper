@@ -6,36 +6,18 @@ The Bookkeeper Agent is an intelligent financial management system that automate
 
 ## Core Features
 
-### Email Processing
+### Document Processing Workflow
 
-#### Intake Process
+The Bookkeeper Agent follows a simple three-step process:
 
-- Accept inputs from multiple sources: file uploads or email sources
-- Handle multiple files and invoices within a single input/email
-- Process manually uploaded documents, receipts, and email attachments
-- Classify documents as receipts, invoices, or other non-financial documents
-- Handle various file formats (PDF, images, text files)
-- Store original files in unique directories for organization
-- Track relationships between invoices and their associated receipts
-- Check MongoDB for duplicate processing prevention
-- Store both original and processed forms of documents
-- Assign unique identifiers and metadata to incoming documents
-- Track processing status and source information
-- Filter out and ignore non-financial documents (shipping updates, etc.)
+1. **Input**: Files are uploaded manually or emails are retrieved from email providers
+2. **Queue**: Documents are added to the Entry Queue Manager for tracking and processing
+3. **Extraction**: The Extractor processes queued documents and saves invoice/receipt information to MongoDB collections
 
-#### Email Retrieval Process
+#### Starting Points
 
-- Download emails with specific labels from email providers (Gmail, Outlook, etc.)
-- Extract financial information from email content and attachments
-- Parse receipts, invoices, and financial documents
-- Handle multiple email formats (text, HTML, PDF attachments)
-
-### Expense Classification
-
-- Automatically categorize expenses using AI
-- Support custom expense categories
-- Learn from user corrections and feedback
-- Handle tax-deductible vs non-deductible classifications
+**File Upload**: Users manually upload documents (invoices, receipts, PDFs, images) via File Handler
+**Email Retrieval**: Email Handler retrieves emails and adds each attachment to entry queue separately
 
 ### Data Management
 
@@ -52,7 +34,6 @@ The Bookkeeper Agent is an intelligent financial management system that automate
 ## Technology Stack
 
 - **Primary Language**: Python 3.12+
-- **AI Framework**: LangGraph for workflow orchestration
 - **Database**: MongoDB for data storage
 - **Email Processing**: IMAP/OAuth2 for email access
 - **Document Processing**: OCR and text extraction libraries
@@ -63,178 +44,71 @@ The Bookkeeper Agent is an intelligent financial management system that automate
 
 #### Email Handler (`email_handler/`)
 
-**Purpose**: Manage email connectivity and message retrieval
+**Purpose**: Retrieve emails and add attachments/content to entry queue
 
 **Key Classes**:
 
-- `EmailClient`: Abstract base class for email providers
-- `EmailMessage`: Wrapper for email data structure
-- `EmailFilter`: Filter emails by labels, dates, and criteria
+- `EmailClient`: Connect to email providers (Gmail, Outlook, etc.)
+- `EmailProcessor`: Process email content and attachments
+- `AttachmentExtractor`: Extract attachments from emails
 
 **Key Methods**:
 
 - `connect()`: Establish email connection
-- `get_messages(labels: [str] | None)`: Retrieve emails with specific labels
-- `download_attachments()`: Extract and save attachments
+- `retrieve_emails(labels: [str])`: Retrieve emails with specific labels
+- `process_email(email: dict)`: Process email and add each attachment to entry queue
+- `extract_attachments(email: dict)`: Extract all attachments from email
+- `add_to_entry_queue(attachment: dict)`: Add individual attachment to entry queue
+
+#### File Handler (`file_handler/`)
+
+**Purpose**: Process individual files from various sources (email attachments, manual uploads, email body text)
+
+**Key Classes**:
+
+- `FileUploadHandler`: Handle manual file uploads
+- `FileValidator`: Validate uploaded files
+
+**Key Methods**:
+
+- `upload_file(file_path: str, metadata: dict)`: Process uploaded file and add to entry queue
+- `validate_file(file_data: bytes)`: Ensure file is valid for processing
 
 #### Entry Queue Manager (`entry_queue/`)
 
-**Purpose**: Handle manual file uploads and document intake
+**Purpose**: Manage document intake queue and duplicate detection
 
 **Key Classes**:
 
-- `EntryQueueManager`: Main intake orchestrator
-- `DocumentClassifier`: Classify documents as receipt, invoice, or other
-- `IntakeRecord`: Data structure for intake tracking
-- `SourceTracker`: Track document sources and origins
+- `EntryQueueManager`: Main queue orchestrator
 - `DuplicateChecker`: Check for previously processed documents
-- `DocumentStore`: Manage original and processed document storage
-- `DirectoryManager`: Manage unique directory creation and file organization
-- `ReceiptInvoiceLinker`: Manage relationships between invoices and receipts
+- `IntakeRecord`: Data structure for tracking queued documents
 
 **Key Methods**:
 
-- `accept_file(file_path: str, identifier: str, date: datetime, source: str)`: Process single incoming file
-- `accept_multiple_files(file_paths: [str], identifier: str, date: datetime, source: str)`: Process multiple files as a batch
-- `accept_email_source(email_id: str, attachment_paths: [str], date: datetime)`: Process email with multiple attachments
-- `classify_document_type(file_content: bytes)`: Determine if document is receipt, invoice, or other
-- `link_receipt_to_invoice(receipt_id: str, invoice_id: str)`: Associate receipt with its invoice
-- `create_unique_directory()`: Create unique directory for storing original files
-- `organize_files_by_batch()`: Organize multiple files within unique directory
-- `check_duplicate(source_hash: str)`: Verify if document was previously processed
-- `store_original(document: bytes, metadata: dict, directory_path: str)`: Store original document in unique directory
-- `store_processed(processed_data: dict, original_id: str)`: Store processed document data
-- `filter_non_financial_docs()`: Identify and exclude non-financial documents
-- `validate_metadata()`: Ensure required metadata is present
-- `assign_unique_id()`: Generate unique document identifiers
-- `queue_for_processing()`: Add to processing pipeline
+- `add_to_queue(file_info: dict)`: Add document to processing queue
+- `get_next_item()`: Get next document from queue for processing
+- `check_duplicate(file_hash: str)`: Verify if document was previously processed
+- `update_status(intake_id: str, status: str)`: Update processing status
 
-#### Document Processor (`document_processor/`)
+#### Extractor (`extractor/`)
 
-**Purpose**: Extract and parse financial information from documents
+**Purpose**: Extract invoice and receipt information from queued documents
 
 **Key Classes**:
 
-- `DocumentProcessor`: Main document processing orchestrator
-- `PDFProcessor`: Handle PDF documents and invoices
-- `ImageProcessor`: Process receipt images with OCR
-- `TextExtractor`: Extract structured data from text
-- `ReceiptParser`: Specialized receipt parsing logic
-- `InvoiceParser`: Specialized invoice parsing logic
-- `DocumentTypeDetector`: Identify document types during processing
+- `DocumentExtractor`: Main extraction orchestrator
+- `InvoiceExtractor`: Extract invoice-specific information
+- `ReceiptExtractor`: Extract receipt-specific information
+- `DocumentClassifier`: Determine if document is invoice or receipt
 
 **Key Methods**:
 
-- `extract_financial_data()`: Main extraction pipeline
-- `process_by_document_type(doc_type: str)`: Route processing based on document type
-- `parse_amount()`: Extract monetary amounts
-- `parse_date()`: Extract transaction dates
-- `parse_vendor()`: Identify merchant/vendor
-- `extract_line_items()`: Parse itemized expenses
-- `detect_receipt_vs_invoice()`: Distinguish between receipt and invoice characteristics
-- `extract_invoice_number()`: Extract invoice/receipt numbers for linking
-
-#### Expense Classifier (`expense_classifier/`)
-
-**Purpose**: AI-powered expense categorization and classification
-
-**Key Classes**:
-
-- `ExpenseClassifier`: Main classification engine
-- `CategoryModel`: ML model for expense categorization
-- `TaxClassifier`: Determine tax deductibility
-
-**Key Methods**:
-
-- `classify_expense()`: Categorize expense type
-- `determine_tax_status()`: Assess tax implications
-- `get_confidence_score()`: Return classification confidence
-
-#### Data Manager (`data_manager/`)
-
-**Purpose**: MongoDB operations and data persistence
-
-**Key Classes**:
-
-- `DatabaseManager`: MongoDB connection and operations
-- `ExpenseModel`: Expense data model/schema
-- `ReportModel`: Report data model/schema
-- `IntakeModel`: Intake tracking data model/schema
-- `DocumentModel`: Original and processed document storage model
-- `DataValidator`: Validate data integrity
-
-**Key Methods**:
-
-- `save_expense()`: Store expense records
-- `get_expenses()`: Query expense data
-- `update_expense()`: Modify existing records
-- `delete_expense()`: Remove records
-- `save_intake_record()`: Store intake tracking information
-- `get_intake_record()`: Query intake records
-- `save_document()`: Store original and processed documents
-- `check_document_exists()`: Verify if document was previously processed
-- `create_indexes()`: Optimize database performance
-
-#### Report Generator (`report_generator/`)
-
-**Purpose**: Generate financial reports and analytics
-
-**Key Classes**:
-
-- `ReportGenerator`: Main reporting engine
-- `ExpenseReport`: Standard expense report
-- `TaxReport`: Tax-focused reporting
-- `CategoryAnalyzer`: Category-based analysis
-- `ExportManager`: Handle multiple export formats
-
-**Key Methods**:
-
-- `generate_expense_report()`: Create standard reports
-- `generate_tax_summary()`: Tax-specific reporting
-- `analyze_spending_patterns()`: Spending analysis
-- `export_to_pdf()`: PDF export functionality
-- `export_to_csv()`: CSV export functionality
-
-#### LangGraph Workflow (`workflow/`)
-
-**Purpose**: Orchestrate the entire bookkeeping process using LangGraph
-
-**Key Classes**:
-
-- `BookkeeperWorkflow`: Main LangGraph workflow definition
-- `EmailProcessorNode`: Email processing node
-- `EntryQueueNode`: Entry queue processing node
-- `ClassificationNode`: Expense classification node
-- `ValidationNode`: Data validation node
-- `StorageNode`: Data storage node
-- `ReportingNode`: Report generation node
-
-**Key Methods**:
-
-- `process_emails()`: Main workflow entry point for email processing
-- `process_entry_queue()`: Main workflow entry point for entry queue processing
-- `validate_and_store()`: Validation and storage pipeline
-- `generate_reports()`: Reporting workflow
-- `handle_errors()`: Error handling and recovery
-
-#### Configuration Manager (`config/`)
-
-**Purpose**: Manage application configuration and settings
-
-**Key Classes**:
-
-- `ConfigManager`: Central configuration management
-- `EmailConfig`: Email provider settings
-- `DatabaseConfig`: MongoDB connection settings
-- `AIConfig`: AI model configurations
-- `ReportConfig`: Report generation settings
-
-**Key Methods**:
-
-- `load_config()`: Load configuration from files
-- `validate_config()`: Ensure configuration validity
-- `update_config()`: Modify configuration settings
-- `get_secret()`: Retrieve sensitive credentials
+- `process_queue_item(queue_entry: dict)`: Process queued document and save to MongoDB
+- `extract_invoice_data(document: bytes)`: Extract invoice information
+- `extract_receipt_data(document: bytes)`: Extract receipt information
+- `save_to_invoices_collection(invoice_data: dict)`: Save invoice to MongoDB
+- `save_to_receipts_collection(receipt_data: dict)`: Save receipt to MongoDB
 
 ## Data Models
 
