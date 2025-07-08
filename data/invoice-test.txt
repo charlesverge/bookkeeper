@@ -1,0 +1,38 @@
+INVOICE #INV-2025-001
+
+ABC Services Inc.
+123 Business Street
+New York, NY 10001
+Phone: (555) 123-4567
+Email: billing@abcservices.com
+
+BILL TO:
+XYZ Corporation
+456 Commerce Ave
+Los Angeles, CA 90210
+
+Invoice Date: July 8, 2025
+Due Date: August 7, 2025
+Payment Terms: Net 30
+
+DESCRIPTION                              QTY    RATE      AMOUNT
+---------------------------------------- ------ --------- ----------
+Professional Consulting Services         40     $150.00   $6,000.00
+Software License (Annual)                1      $1,200.00 $1,200.00
+Training Sessions                        8      $75.00    $600.00
+Technical Support                        1      $500.00   $500.00
+
+                                         SUBTOTAL:         $8,300.00
+                                         TAX (8.5%):       $705.50
+                                         TOTAL DUE:        $9,005.50
+
+Payment Instructions:
+Please remit payment within 30 days of invoice date.
+Wire transfer or check payments accepted.
+
+Account Details:
+Bank: First National Bank
+Account: 123-456-7890
+Routing: 987654321
+
+Thank you for your business!

@@ -1,0 +1,33 @@
+RECEIPT
+
+Office Supply Store
+789 Retail Boulevard
+Chicago, IL 60601
+Phone: (555) 987-6543
+
+Date: July 8, 2025
+Time: 14:32:15
+Cashier: Sarah M.
+Transaction #: RCT-789456
+
+ITEMS PURCHASED:
+----------------------------------------
+Printer Paper (500 sheets)     $12.99
+Pens (Pack of 12)              $8.45
+Stapler                        $15.99
+Notebook (3-pack)              $6.75
+USB Flash Drive 32GB           $19.99
+File Folders (25 pack)         $11.49
+
+SUBTOTAL:                      $75.66
+TAX (7.25%):                   $5.49
+TOTAL:                         $81.15
+
+PAYMENT METHOD: Credit Card ****1234
+APPROVAL CODE: 567890
+
+RETURN POLICY:
+Items may be returned within 30 days
+with original receipt.
+
+Thank you for shopping with us!

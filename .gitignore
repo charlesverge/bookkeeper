@@ -1,0 +1,5 @@
+CACHEDIR.TAG
+lib
+bin
+pyvenv.cfg
+bookkeeper.egg-info/
