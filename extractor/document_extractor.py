@@ -251,23 +251,38 @@ class DocumentExtractor:
             # Classify document type
             document_type = self._classify_document(raw_text)
 
-            # Extract structured data using AI
-            extracted_data = self._extract_structured_data(raw_text, document_type)
+            # Skip structured extraction for "other" document types
+            if document_type == DocumentType.OTHER:
+                logger.info(
+                    f"Document {intake_id} classified as 'other', skipping structured extraction"
+                )
+                completion_details = {
+                    "extraction_completed_at": datetime.now().isoformat(),
+                    "document_type": document_type.value,
+                    "note": "Structured extraction skipped for 'other' document type",
+                }
+            else:
+                # Extract structured data using AI
+                extracted_data = self._extract_structured_data(raw_text, document_type)
 
-            # Save extracted data to appropriate MongoDB collection
-            saved_id = None
-            if extracted_data.document_type == DocumentType.INVOICE:
-                saved_id = self._save_to_invoices_collection(extracted_data, intake_id)
-            elif extracted_data.document_type == DocumentType.RECEIPT:
-                saved_id = self._save_to_receipts_collection(extracted_data, intake_id)
+                # Save extracted data to appropriate MongoDB collection
+                saved_id = None
+                if extracted_data.document_type == DocumentType.INVOICE:
+                    saved_id = self._save_to_invoices_collection(
+                        extracted_data, intake_id
+                    )
+                elif extracted_data.document_type == DocumentType.RECEIPT:
+                    saved_id = self._save_to_receipts_collection(
+                        extracted_data, intake_id
+                    )
 
-            # Update status to completed with saved document reference
-            completion_details = {
-                "extraction_completed_at": datetime.now().isoformat(),
-                "document_type": extracted_data.document_type.value,
-            }
-            if saved_id:
-                completion_details["saved_document_id"] = saved_id
+                # Update status to completed with saved document reference
+                completion_details = {
+                    "extraction_completed_at": datetime.now(),
+                    "document_type": extracted_data.document_type.value,
+                }
+                if saved_id:
+                    completion_details["saved_document_id"] = saved_id
 
             success = self.queue_manager.update_intake_status(
                 intake_id,
@@ -278,20 +293,25 @@ class DocumentExtractor:
             if not success:
                 logger.warning(f"Failed to update status for {intake_id}")
 
-            logger.info(
-                f"Successfully processed document: {intake_id}, saved as: {saved_id}"
-            )
-            return extracted_data
+            if document_type == DocumentType.OTHER:
+                logger.info(f"Successfully processed 'other' document: {intake_id}")
+                return None
+            else:
+                logger.info(
+                    f"Successfully processed document: {intake_id}, saved as: {saved_id}"
+                )
+                return extracted_data
 
         except Exception as e:
             # Update status to failed with detailed error information
             if queue_item:
-                intake_id = queue_item.get("intake_id", "unknown")
+                intake_id = queue_item.get("_id")
                 error_msg = str(e)
-                self._update_status_to_failed(intake_id, error_msg)
+                if intake_id:
+                    self._update_status_to_failed(intake_id, error_msg)
 
             logger.error(
-                f"Failed to process document {queue_item.get('intake_id', 'unknown') if queue_item else 'unknown'}: {e}"
+                f"Failed to process document {queue_item.get('_id', 'unknown') if queue_item else 'unknown'}: {e}"
             )
             return None
 
@@ -333,7 +353,7 @@ class DocumentExtractor:
             True if valid, False otherwise
         """
         try:
-            required_fields = ["intake_id", "file_location", "file_id", "source"]
+            required_fields = ["_id", "file_location", "file_id", "source"]
             for field in required_fields:
                 if field not in queue_item:
                     logger.error(f"Missing required field in queue item: {field}")
@@ -399,9 +419,8 @@ class DocumentExtractor:
                 elif file_extension == ".txt":
                     return self._extract_text_from_txt(file_location)
                 else:
-                    # Try OCR as fallback
                     logger.warning(f"Unknown file type {file_extension}, trying OCR")
-                    return self._extract_text_from_image(file_location)
+                    return ""
 
             except (FileNotFoundError, InvalidDocumentError):
                 # Re-raise these without wrapping
@@ -698,7 +717,7 @@ class DocumentExtractor:
                 "tax_amount": 1.00,
                 "total_amount": 11.00,
                 "payment_method": "payment method if specified",
-                "currency": "currency code (USD, EUR, etc.)"
+                "currency": "currency code (CAD, USD, EUR, etc.) default is CAD"
             }}
             
             Instructions:
