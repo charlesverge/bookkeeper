@@ -25,6 +25,13 @@ classifiers = [
 dependencies = [
     "pymongo>=4.0.0",
     "dataclasses-json>=0.6.0",
+    "openai>=1.0.0",
+    "PyPDF2>=3.0.0",
+    "pytesseract>=0.3.10",
+    "Pillow>=10.0.0",
+    "beautifulsoup4>=4.12.0",
+    "html2text>=2020.1.16",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -47,7 +54,7 @@ bookkeeper-test = "main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["file_intake*"]
+include = ["file_intake*", "entry_queue*", "extractor*"]
 
 [tool.black]
 line-length = 88

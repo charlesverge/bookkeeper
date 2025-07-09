@@ -78,16 +78,13 @@ def create_intake_record(self, file_info: FileInfo) -> IntakeRecord:
     """
 
     intake_record = {
-        "intake_id": generate_uuid(),
         "file_location": file_info.file_location,
         "file_id": file_info.file_id,
         "source": file_info.source,
         "date": file_info.date,
-        "document_type": "pending",  # Will be determined by extractor
-        "intake_date": datetime.utcnow(),
         "processing_status": "queued_for_extraction",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow()
+        "created_at": datetime.now(),
+        "updated_at": datetime.now()
     }
 
     return self.db.save_intake_record(intake_record)
@@ -135,26 +132,26 @@ The File Intake Handler receives requests from and coordinates with:
 ### Intake Record Management
 
 ```python
-def update_intake_status(self, intake_id: str, status: str, details: dict = None):
+def update_intake_status(self, record_id: str, status: str, details: dict = None):
     """
     Update intake record processing status
     """
 
     update_data = {
         "processing_status": status,
-        "updated_at": datetime.utcnow()
+        "updated_at": datetime.now()
     }
 
     if details:
         update_data["status_details"] = details
 
-    return self.db.update_intake_record(intake_id, update_data)
+    return self.db.update_intake_record(record_id, update_data)
 
-def get_intake_record(self, intake_id: str) -> IntakeRecord:
+def get_intake_record(self, record_id: str) -> IntakeRecord:
     """
     Retrieve intake record by ID
     """
-    return self.db.get_intake_record(intake_id)
+    return self.db.get_intake_record(record_id)
 ```
 
 ## Error Handling

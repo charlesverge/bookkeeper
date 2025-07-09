@@ -27,7 +27,7 @@ def setup_mongodb():
     try:
         # Connect to MongoDB (default localhost:27017)
         client = MongoClient(
-            os.getenv("MONGODB_URL", "mongodb://localhost:27017/"),
+            os.getenv("MONGODB_URL", ""),
             serverSelectionTimeoutMS=5000,
         )
 

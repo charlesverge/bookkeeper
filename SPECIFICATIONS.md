@@ -112,12 +112,20 @@ The Bookkeeper Agent follows a simple three-step process:
 
 ## Data Models
 
+### Currency Storage Convention
+
+All monetary amounts are stored as integers in the smallest currency unit (e.g., cents for USD).
+For example: $123.45 is stored as 12345 (cents).
+
+### Date Storage Convention
+
+All dates are stored as datetime objects in MongoDB for consistent date handling and timezone support.
+
 ### Intake Record Schema
 
 ```python
 {
     "_id": ObjectId,
-    "intake_id": str,
     "batch_id": str,  # Groups multiple files from same source
     "document_type": str,  # "receipt", "invoice", "other", "ignored"
     "source_type": str,  # "file_upload" or "email_attachment"
@@ -153,27 +161,26 @@ The Bookkeeper Agent follows a simple three-step process:
 ```python
 {
     "_id": ObjectId,
-    "invoice_id": str,
-    "intake_id": str,  # Reference to intake record
+    "intake_id": ObjectId,  # Reference to intake record
     "invoice_number": str,
     "vendor": str,
     "issue_date": datetime,
     "due_date": datetime,
-    "amount": Decimal,
+    "amount": int,  # Stored in smallest currency unit (e.g., cents)
     "currency": str,
-    "tax_amount": Decimal,
+    "tax_amount": int,  # Stored in smallest currency unit (e.g., cents)
     "description": str,
     "line_items": [
         {
             "description": str,
             "quantity": int,
-            "unit_price": Decimal,
-            "total": Decimal
+            "unit_price": int,  # Stored in smallest currency unit (e.g., cents)
+            "total": int  # Stored in smallest currency unit (e.g., cents)
         }
     ],
     "payment_terms": str,
     "status": str,  # "pending", "paid", "overdue", "cancelled"
-    "receipt_id": str,  # Reference to associated receipt (if exists)
+    "receipt_id": ObjectId,  # Reference to associated receipt (if exists)
     "created_at": datetime,
     "updated_at": datetime
 }
@@ -184,25 +191,24 @@ The Bookkeeper Agent follows a simple three-step process:
 ```python
 {
     "_id": ObjectId,
-    "receipt_id": str,
-    "intake_id": str,  # Reference to intake record
+    "receipt_id": ObjectId,
+    "intake_id": ObjectId,  # Reference to intake record
     "receipt_number": str,
     "vendor": str,
     "transaction_date": datetime,
-    "amount": Decimal,
+    "amount": int,  # Stored in smallest currency unit (e.g., cents)
     "currency": str,
-    "tax_amount": Decimal,
+    "tax_amount": int,  # Stored in smallest currency unit (e.g., cents)
     "payment_method": str,
     "description": str,
     "line_items": [
         {
             "description": str,
             "quantity": int,
-            "unit_price": Decimal,
-            "total": Decimal
+            "unit_price": int,  # Stored in smallest currency unit (e.g., cents)
+            "total": int  # Stored in smallest currency unit (e.g., cents)
         }
     ],
-    "invoice_id": str,  # Reference to associated invoice (if exists)
     "created_at": datetime,
     "updated_at": datetime
 }

@@ -5,13 +5,13 @@ This module handles duplicate detection, queue management, and status tracking
 for documents received from file and email handlers.
 """
 
-import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 from enum import Enum
 import logging
 from pymongo.collection import Collection
+from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class DuplicateResult:
     """Result of duplicate detection check."""
 
     is_duplicate: bool
-    existing_id: Optional[str] = None
+    existing_id: Optional[ObjectId] = None
     message: Optional[str] = None
 
 
@@ -49,13 +49,11 @@ class DuplicateResult:
 class IntakeRecord:
     """Data structure for tracking intake operations."""
 
-    intake_id: str
+    _id: ObjectId
     file_location: str
     file_id: str
     source: str
     date: datetime
-    document_type: str
-    intake_date: datetime
     processing_status: str
     created_at: datetime
     updated_at: datetime
@@ -85,8 +83,8 @@ class ValidationError(Exception):
 class DuplicateChecker:
     """Handles duplicate detection operations."""
 
-    def __init__(self, mongodb_collection: Collection):
-        self.collection = mongodb_collection
+    def __init__(self, intake_records_collection: Collection):
+        self.intake_records_collection = intake_records_collection
 
     def check_duplicate(
         self, file_location: str, file_id: str, source: str, date: datetime
@@ -100,7 +98,7 @@ class DuplicateChecker:
         """
         try:
             # Check for exact match of location, id, source, and date combination
-            existing_record = self.collection.find_one(
+            existing_record = self.intake_records_collection.find_one(
                 {
                     "file_location": file_location,
                     "file_id": file_id,
@@ -112,7 +110,7 @@ class DuplicateChecker:
             if existing_record:
                 return DuplicateResult(
                     is_duplicate=True,
-                    existing_id=existing_record["intake_id"],
+                    existing_id=existing_record["_id"],
                     message=f"Already processed: {existing_record['processing_status']}",
                 )
 
@@ -126,10 +124,9 @@ class DuplicateChecker:
 class EntryQueueManager:
     """Central orchestrator for all intake operations."""
 
-    def __init__(self, mongodb_collection: Collection):
-        self.collection = mongodb_collection
-
-        self.duplicate_checker = DuplicateChecker(mongodb_collection)
+    def __init__(self, intake_records_collection: Collection):
+        self.intake_records_collection = intake_records_collection
+        self.duplicate_checker = DuplicateChecker(intake_records_collection)
 
     def process_file_request(self, file_info: FileInfo) -> Dict[str, Any]:
         """
@@ -167,12 +164,12 @@ class EntryQueueManager:
             intake_record = self._create_intake_record(file_info)
 
             # Queue for extractor
-            self._queue_for_extraction(file_info, intake_record.intake_id)
+            self._queue_for_extraction(file_info, intake_record._id)
 
             logger.info(f"Successfully processed file request for {file_info.file_id}")
             return {
                 "status": "success",
-                "intake_id": intake_record.intake_id,
+                "_id": intake_record._id,
                 "processing_status": intake_record.processing_status,
             }
 
@@ -203,7 +200,7 @@ class EntryQueueManager:
         return self.process_file_request(file_info)
 
     def update_intake_status(
-        self, intake_id: str, status: str, details: Optional[Dict[str, Any]] = None
+        self, intake_id: ObjectId, status: str, details: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Update intake record processing status.
@@ -222,8 +219,8 @@ class EntryQueueManager:
             if details:
                 update_data["status_details"] = details
 
-            result = self.collection.update_one(
-                {"intake_id": intake_id}, {"$set": update_data}
+            result = self.intake_records_collection.update_one(
+                {"_id": intake_id}, {"$set": update_data}
             )
             logger.info(f"Updated intake status for {intake_id}: {status}")
             return result.modified_count > 0
@@ -232,7 +229,7 @@ class EntryQueueManager:
             logger.error(f"Failed to update intake status for {intake_id}: {e}")
             return False
 
-    def get_intake_record(self, intake_id: str) -> Optional[IntakeRecord]:
+    def get_intake_record(self, intake_id: ObjectId) -> Optional[IntakeRecord]:
         """
         Retrieve intake record by ID.
 
@@ -243,17 +240,14 @@ class EntryQueueManager:
             IntakeRecord if found, None otherwise
         """
         try:
-            record_data = self.collection.find_one({"intake_id": intake_id})
+            record_data = self.intake_records_collection.find_one({"_id": intake_id})
             if record_data:
-                # Convert MongoDB document to IntakeRecord
                 return IntakeRecord(
-                    intake_id=record_data["intake_id"],
+                    _id=record_data["_id"],
                     file_location=record_data["file_location"],
                     file_id=record_data["file_id"],
                     source=record_data["source"],
                     date=record_data["date"],
-                    document_type=record_data["document_type"],
-                    intake_date=record_data["intake_date"],
                     processing_status=record_data["processing_status"],
                     created_at=record_data["created_at"],
                     updated_at=record_data["updated_at"],
@@ -287,29 +281,26 @@ class EntryQueueManager:
         """Create intake record for tracking purposes."""
         try:
             intake_record = IntakeRecord(
-                intake_id=str(uuid.uuid4()),
+                _id=ObjectId(),
                 file_location=file_info.file_location,
                 file_id=file_info.file_id,
                 source=file_info.source,
                 date=file_info.date,
-                document_type="pending",  # Will be determined by extractor
-                intake_date=datetime.utcnow(),
                 processing_status=ProcessingStatus.QUEUED_FOR_EXTRACTION.value,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
             )
 
-            # Convert to dict and save to MongoDB
             record_dict = asdict(intake_record)
-            self.collection.insert_one(record_dict)
-            logger.info(f"Created intake record {intake_record.intake_id}")
+            self.intake_records_collection.insert_one(record_dict)
+            logger.info(f"Created intake record {intake_record._id}")
             return intake_record
 
         except Exception as e:
             logger.error(f"Failed to create intake record: {e}")
             raise DatabaseError(f"Failed to create intake record: {str(e)}")
 
-    def _queue_for_extraction(self, file_info: FileInfo, intake_id: str):
+    def _queue_for_extraction(self, file_info: FileInfo, intake_id: ObjectId):
         """Queue file for extractor processing."""
         # File is already queued via the intake record in MongoDB with status QUEUED_FOR_EXTRACTION
         logger.info(f"Queued {intake_id} for extraction")
@@ -317,7 +308,7 @@ class EntryQueueManager:
     def get_extraction_queue(self) -> list:
         """Get current extraction queue from MongoDB."""
         try:
-            queued_records = self.collection.find(
+            queued_records = self.intake_records_collection.find(
                 {"processing_status": ProcessingStatus.QUEUED_FOR_EXTRACTION.value}
             ).sort("created_at", 1)
 
@@ -325,7 +316,7 @@ class EntryQueueManager:
             for record in queued_records:
                 queue_items.append(
                     {
-                        "intake_id": record["intake_id"],
+                        "_id": record["_id"],
                         "file_location": record["file_location"],
                         "file_id": record["file_id"],
                         "source": record["source"],
@@ -349,12 +340,12 @@ class EntryQueueManager:
     def clear_extraction_queue(self):
         """Clear the extraction queue by updating all queued records to failed status."""
         try:
-            result = self.collection.update_many(
+            result = self.intake_records_collection.update_many(
                 {"processing_status": ProcessingStatus.QUEUED_FOR_EXTRACTION.value},
                 {
                     "$set": {
                         "processing_status": ProcessingStatus.FAILED.value,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(),
                         "status_details": {"reason": "Queue cleared"},
                     }
                 },
@@ -368,27 +359,24 @@ class EntryQueueManager:
     def pop_from_extraction_queue(self) -> Optional[Dict[str, Any]]:
         """Pop the next item from extraction queue by updating its status to processing."""
         try:
-            # Find the oldest queued record
-            queued_record = self.collection.find_one(
+            queued_record = self.intake_records_collection.find_one(
                 {"processing_status": ProcessingStatus.QUEUED_FOR_EXTRACTION.value},
                 sort=[("created_at", 1)],
             )
 
             if queued_record:
-                # Update its status to processing
-                self.collection.update_one(
-                    {"intake_id": queued_record["intake_id"]},
+                self.intake_records_collection.update_one(
+                    {"_id": queued_record["_id"]},
                     {
                         "$set": {
                             "processing_status": ProcessingStatus.PROCESSING.value,
-                            "updated_at": datetime.utcnow(),
+                            "updated_at": datetime.now(),
                         }
                     },
                 )
 
-                # Return the queue item format
                 item = {
-                    "intake_id": queued_record["intake_id"],
+                    "_id": queued_record["_id"],
                     "file_location": queued_record["file_location"],
                     "file_id": queued_record["file_id"],
                     "source": queued_record["source"],
@@ -403,7 +391,7 @@ class EntryQueueManager:
                         else str(queued_record["created_at"])
                     ),
                 }
-                logger.info(f"Popped {item['intake_id']} from extraction queue")
+                logger.info(f"Popped {item['_id']} from extraction queue")
                 return item
             return None
         except Exception as e:
