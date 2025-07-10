@@ -89,16 +89,19 @@ class QueueProcessor:
                     queue_items = self.queue_manager.get_extraction_queue()
                     if queue_items:
                         logger.info(f"Found {len(queue_items)} items in queue")
+                    else:
+                        # No documents to process, wait before checking again
+                        logger.debug(
+                            f"No documents in queue, waiting {self.poll_interval} seconds..."
+                        )
+                        self.stop()
+                        time.sleep(self.poll_interval)
+                        continue
 
                     # Process next document
                     extracted_data = self.extractor.process_next_document()
 
                     if extracted_data is None:
-                        # No documents to process, wait before checking again
-                        logger.debug(
-                            f"No documents in queue, waiting {self.poll_interval} seconds..."
-                        )
-                        time.sleep(self.poll_interval)
                         continue
 
                     processed_count += 1
@@ -204,13 +207,16 @@ Examples:
 
             if args.status:
                 queue_items = queue_manager.get_extraction_queue()
-                print(f"Queue status: {len(queue_items)} items pending")
-                for i, item in enumerate(queue_items[:5], 1):
-                    print(
-                        f"  {i}. {item['file_id']} ({item['source']}) - {item['queued_at']}"
-                    )
-                if len(queue_items) > 5:
-                    print(f"  ... and {len(queue_items) - 5} more")
+                print(f"Queue status:")
+                print(f"  Pending extraction: {len(queue_items)} items")
+
+                if queue_items:
+                    print(f"\nNext {min(5, len(queue_items))} items for extraction:")
+                    for i, item in enumerate(queue_items[:5], 1):
+                        print(
+                            f"  {i}. {item['file_id']} ({item['source']}) - {item['queued_at']}"
+                        )
+
                 mongo_client.close()
                 return
 

@@ -256,37 +256,59 @@ class DocumentExtractor:
                 logger.info(
                     f"Document {intake_id} classified as 'other', skipping structured extraction"
                 )
+                final_status = ProcessingStatus.COMPLETED.value
                 completion_details = {
-                    "extraction_completed_at": datetime.now().isoformat(),
+                    "extraction_completed_at": datetime.now(),
                     "document_type": document_type.value,
                     "note": "Structured extraction skipped for 'other' document type",
                 }
+                is_complete = True  # For logging purposes
+                missing_fields = []
+                saved_id = None
             else:
                 # Extract structured data using AI
                 extracted_data = self._extract_structured_data(raw_text, document_type)
+
+                # Validate extracted data for completeness
+                is_complete, missing_fields = (
+                    self._validate_extracted_data_for_completeness(extracted_data)
+                )
 
                 # Save extracted data to appropriate MongoDB collection
                 saved_id = None
                 if extracted_data.document_type == DocumentType.INVOICE:
                     saved_id = self._save_to_invoices_collection(
-                        extracted_data, intake_id
+                        extracted_data, intake_id, is_complete, missing_fields
                     )
                 elif extracted_data.document_type == DocumentType.RECEIPT:
                     saved_id = self._save_to_receipts_collection(
-                        extracted_data, intake_id
+                        extracted_data, intake_id, is_complete, missing_fields
                     )
 
-                # Update status to completed with saved document reference
+                # Always mark intake as COMPLETED since extraction finished successfully
+                final_status = ProcessingStatus.COMPLETED.value
                 completion_details = {
                     "extraction_completed_at": datetime.now(),
                     "document_type": extracted_data.document_type.value,
+                    "validation_status": (
+                        "complete" if is_complete else "requires_review"
+                    ),
                 }
+
+                if not is_complete:
+                    completion_details.update(
+                        {
+                            "missing_fields": missing_fields,
+                            "review_reason": f"Missing required fields: {', '.join(missing_fields)}",
+                        }
+                    )
+
                 if saved_id:
                     completion_details["saved_document_id"] = saved_id
 
             success = self.queue_manager.update_intake_status(
                 intake_id,
-                ProcessingStatus.COMPLETED.value,
+                final_status,
                 completion_details,
             )
 
@@ -297,9 +319,14 @@ class DocumentExtractor:
                 logger.info(f"Successfully processed 'other' document: {intake_id}")
                 return None
             else:
-                logger.info(
-                    f"Successfully processed document: {intake_id}, saved as: {saved_id}"
-                )
+                if is_complete:
+                    logger.info(
+                        f"Successfully processed document: {intake_id}, saved as: {saved_id}, status: COMPLETED"
+                    )
+                else:
+                    logger.info(
+                        f"Processed document with missing fields: {intake_id}, saved as: {saved_id}, status: REVIEW, missing: {', '.join(missing_fields)}"
+                    )
                 return extracted_data
 
         except Exception as e:
@@ -610,7 +637,7 @@ class DocumentExtractor:
 
             try:
                 response = self.openai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",
                     messages=[
                         {
                             "role": "system",
@@ -728,7 +755,7 @@ class DocumentExtractor:
             """
 
             response = self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
@@ -748,6 +775,10 @@ class DocumentExtractor:
 
             # Parse the JSON response
             try:
+                if "```json" in json_response:
+                    start = json_response.find("```json") + len("```json")
+                    end = json_response.rfind("```", start)
+                    json_response = json_response[start:end].strip()
                 extracted_json = json.loads(json_response)
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse JSON response from OpenAI: {e}")
@@ -795,12 +826,19 @@ class DocumentExtractor:
                     return int(amount * 100)
                 return None
 
+            def convert_to_int(value):
+                if value is None:
+                    return None
+                if isinstance(value, (int, float)):
+                    return int(value)
+                return None
+
             line_items = []
             for item in extracted_json.get("line_items", []):
                 line_items.append(
                     LineItem(
                         description=item.get("description", ""),
-                        quantity=convert_to_cents(item.get("quantity")),
+                        quantity=convert_to_int(item.get("quantity")),
                         unit_price=convert_to_cents(item.get("unit_price")),
                         total_price=convert_to_cents(item.get("total_price")),
                     )
@@ -859,7 +897,11 @@ class DocumentExtractor:
         )
 
     def _save_to_invoices_collection(
-        self, extracted_data: ExtractedData, intake_id: ObjectId
+        self,
+        extracted_data: ExtractedData,
+        intake_id: ObjectId,
+        is_complete: bool = True,
+        missing_fields: Optional[List[str]] = None,
     ) -> Optional[str]:
         """
         Save invoice data to MongoDB invoices collection.
@@ -887,6 +929,7 @@ class DocumentExtractor:
                 logger.warning(f"Invalid extracted data for invoice {intake_id}")
 
             # Prepare invoice document with data validation
+            missing_fields = missing_fields or []
             invoice_doc = {
                 "intake_id": intake_id,
                 "document_number": extracted_data.document_number,
@@ -908,6 +951,8 @@ class DocumentExtractor:
                 "total_amount": extracted_data.total_amount,
                 "currency": extracted_data.currency,
                 "receipt_id": None,
+                "status": "complete" if is_complete else "review",
+                "missing_fields": missing_fields if not is_complete else [],
                 "raw_text": (
                     extracted_data.raw_text[:10000] if extracted_data.raw_text else None
                 ),
@@ -959,7 +1004,11 @@ class DocumentExtractor:
             return None
 
     def _save_to_receipts_collection(
-        self, extracted_data: ExtractedData, intake_id: ObjectId
+        self,
+        extracted_data: ExtractedData,
+        intake_id: ObjectId,
+        is_complete: bool = True,
+        missing_fields: Optional[List[str]] = None,
     ) -> Optional[str]:
         """
         Save receipt data to MongoDB receipts collection.
@@ -987,6 +1036,7 @@ class DocumentExtractor:
                 logger.warning(f"Invalid extracted data for receipt {intake_id}")
 
             # Prepare receipt document with data validation
+            missing_fields = missing_fields or []
             receipt_doc = {
                 "intake_id": intake_id,
                 "document_number": extracted_data.document_number,
@@ -1007,9 +1057,11 @@ class DocumentExtractor:
                 "total_amount": extracted_data.total_amount,
                 "payment_method": extracted_data.payment_method,
                 "currency": extracted_data.currency,
+                "status": "complete" if is_complete else "review",
+                "missing_fields": missing_fields if not is_complete else [],
                 "raw_text": (
                     extracted_data.raw_text[:10000] if extracted_data.raw_text else None
-                ),  # Truncate for storage
+                ),
                 "created_at": datetime.now(),
                 "updated_at": datetime.now(),
             }
@@ -1126,3 +1178,53 @@ class DocumentExtractor:
         except Exception as e:
             logger.error(f"Error validating extracted data: {e}")
             return False
+
+    def _validate_extracted_data_for_completeness(
+        self, extracted_data: ExtractedData
+    ) -> tuple[bool, list[str]]:
+        """
+        Validate extracted data for completeness and return missing required fields.
+
+        Args:
+            extracted_data: ExtractedData to validate
+
+        Returns:
+            Tuple of (is_complete, list_of_missing_fields)
+        """
+        missing_fields = []
+
+        try:
+            # Common required fields for both invoices and receipts
+            if not extracted_data.total_amount or extracted_data.total_amount <= 0:
+                missing_fields.append("total_amount")
+
+            if not extracted_data.date:
+                missing_fields.append("date")
+
+            if not extracted_data.from_company or not extracted_data.from_company.name:
+                missing_fields.append("from_company_name")
+
+            # Document type specific validations
+            if extracted_data.document_type == DocumentType.INVOICE:
+                if not extracted_data.document_number:
+                    missing_fields.append("invoice_number")
+
+                if not extracted_data.to_company or not extracted_data.to_company.name:
+                    missing_fields.append("to_company_name")
+
+            elif extracted_data.document_type == DocumentType.RECEIPT:
+                if not extracted_data.document_number:
+                    missing_fields.append("receipt_number")
+
+                # Receipts should have at least basic line items or total
+                if (
+                    not extracted_data.line_items or len(extracted_data.line_items) == 0
+                ) and not extracted_data.total_amount:
+                    missing_fields.append("line_items_or_total")
+
+            is_complete = len(missing_fields) == 0
+            return is_complete, missing_fields
+
+        except Exception as e:
+            logger.error(f"Error validating extracted data completeness: {e}")
+            return False, ["validation_error"]
